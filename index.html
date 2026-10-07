@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="Convert Fujifilm film simulation recipes into Lightroom presets (.xmp) and 3D LUTs (.cube). Runs entirely on your computer.">
+  <title>Fuji Recipe Converter</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%23111'/%3E%3Ccircle cx='12' cy='12' r='5' fill='none' stroke='%23fff' stroke-width='2'/%3E%3C/svg%3E">
+  <script>
+    // Apply a saved theme choice before first paint (no flash). Without one, the system setting is used.
+    try {
+      var savedTheme = localStorage.getItem("fuji-recipe-converter.theme");
+      if (savedTheme === "light" || savedTheme === "dark") document.documentElement.setAttribute("data-theme", savedTheme);
+    } catch (e) { /* storage unavailable */ }
+  </script>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to main content</a>
+
+  <header class="site-header">
+    <div class="wrap">
+      <div>
+        <h1>Fuji Recipe Converter</h1>
+        <p class="lede">Turn a Fujifilm film simulation recipe into a Lightroom preset or a LUT. Nothing leaves your computer.</p>
+      </div>
+      <button type="button" class="theme-toggle" id="theme-toggle" role="switch" aria-checked="false">
+        <span>Dark mode</span>
+        <span class="track" aria-hidden="true"><span class="thumb"></span></span>
+      </button>
+    </div>
+  </header>
+
+  <main id="main" class="wrap layout">
+    <div class="col">
+      <section class="panel" aria-labelledby="h-import">
+        <h2 id="h-import">Import</h2>
+        <div id="dropzone" class="dropzone">
+          <p>
+            <button type="button" class="btn" id="btn-import-file"><span data-icon="upload"></span>Choose a file</button>
+            <input type="file" id="import-file" class="visually-hidden" tabindex="-1" aria-hidden="true"
+                   accept="image/*,.fp1,.fp2,.fp3,.json,.txt,.xml">
+          </p>
+          <p class="hint">Recipe screenshot, X RAW Studio profile (.FP1 / .FP2 / .FP3) or recipe .json. You can also drop a file here or paste with <kbd>Ctrl</kbd>+<kbd>V</kbd>.</p>
+        </div>
+        <details class="disclosure">
+          <summary>Paste recipe text or a share code</summary>
+          <label for="import-text" class="visually-hidden">Recipe text or share code</label>
+          <textarea id="import-text" rows="6" spellcheck="false" placeholder="Film Simulation: Classic Chrome&#10;White Balance: Daylight, +2 Red &amp; -4 Blue&#10;Highlight: -1&#10;…"></textarea>
+          <button type="button" class="btn" id="btn-import-text">Read recipe</button>
+        </details>
+        <p id="import-status" class="status-line" role="status"></p>
+      </section>
+
+      <section class="panel" aria-labelledby="h-recipe">
+        <h2 id="h-recipe">Recipe</h2>
+        <form id="recipe-form" novalidate>
+          <div class="meta-grid">
+            <div class="text-field">
+              <label for="f-name">Name</label>
+              <input type="text" id="f-name" maxlength="120" autocomplete="off">
+            </div>
+            <div class="text-field">
+              <label for="f-author">Author</label>
+              <input type="text" id="f-author" maxlength="120" autocomplete="off">
+            </div>
+          </div>
+
+          <h3 class="subhead">Settings</h3>
+          <div id="fields" class="fields"></div>
+
+          <h3 class="subhead">Shooting notes <span class="muted">(not part of the conversion)</span></h3>
+          <div id="fields-meta" class="fields"></div>
+
+          <div class="text-field">
+            <label for="f-notes">Description</label>
+            <textarea id="f-notes" rows="2" maxlength="2000"></textarea>
+          </div>
+
+          <div class="actions">
+            <button type="button" class="btn btn-primary" id="btn-save"><span data-icon="star"></span>Save to library</button>
+            <button type="button" class="btn" id="btn-reset"><span data-icon="rotate-ccw"></span>Reset</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <div class="col col-sticky">
+      <section class="panel" aria-labelledby="h-preview">
+        <h2 id="h-preview">Preview</h2>
+        <div class="preview-frame">
+          <canvas id="preview" width="900" height="600" role="img" aria-label="Preview image"></canvas>
+        </div>
+        <div class="compare">
+          <label for="compare">Compare: original on the left, recipe on the right</label>
+          <input type="range" id="compare" min="0" max="100" step="1" value="50" aria-describedby="compare-out">
+          <output id="compare-out" for="compare"></output>
+        </div>
+        <div class="actions">
+          <button type="button" class="btn" id="btn-photo"><span data-icon="image"></span>Use your photo</button>
+          <input type="file" id="photo-file" class="visually-hidden" tabindex="-1" aria-hidden="true" accept="image/*">
+          <button type="button" class="btn" id="btn-sample">Sample image</button>
+        </div>
+        <p class="hint">An approximation rendered through the same LUT you download. Your photo stays in the browser.</p>
+      </section>
+
+      <section class="panel" aria-labelledby="h-export">
+        <h2 id="h-export">Export</h2>
+
+        <fieldset class="choice">
+          <legend>Lightroom / Camera Raw preset for</legend>
+          <div id="xmp-targets"></div>
+        </fieldset>
+        <p id="xmp-hint" class="hint"></p>
+        <div class="actions">
+          <button type="button" class="btn btn-primary" id="btn-xmp"><span data-icon="download"></span>Download preset (.xmp)</button>
+        </div>
+        <details class="disclosure">
+          <summary>What this preset contains</summary>
+          <div id="xmp-details"></div>
+        </details>
+
+        <hr>
+
+        <div class="inline-field">
+          <label for="lut-size">3D LUT size</label>
+          <select id="lut-size">
+            <option value="17">17 (smallest file)</option>
+            <option value="33" selected>33 (recommended)</option>
+            <option value="65">65 (highest precision)</option>
+          </select>
+        </div>
+        <div class="actions">
+          <button type="button" class="btn btn-primary" id="btn-lut"><span data-icon="download"></span>Download LUT (.cube)</button>
+        </div>
+        <p class="hint">For DaVinci Resolve, Premiere Pro, Final Cut, Photoshop, OBS and others. Expects Rec.709 / sRGB footage. Grain, clarity, sharpness and noise reduction cannot be stored in a LUT.</p>
+      </section>
+
+      <section class="panel" aria-labelledby="h-share">
+        <h2 id="h-share">Share</h2>
+        <div class="actions">
+          <button type="button" class="btn" id="btn-copy-code"><span data-icon="share-2"></span>Copy share code</button>
+          <button type="button" class="btn" id="btn-copy-link"><span data-icon="link"></span>Copy link</button>
+          <button type="button" class="btn" id="btn-copy-text"><span data-icon="copy"></span>Copy as text</button>
+          <button type="button" class="btn" id="btn-json"><span data-icon="download"></span>Recipe file (.json)</button>
+        </div>
+        <p class="hint">Anyone with this app can paste the share code or open the recipe file under Import.</p>
+      </section>
+    </div>
+
+    <section class="panel span-all" aria-labelledby="h-library">
+      <h2 id="h-library">Library</h2>
+      <h3 class="subhead">Saved recipes</h3>
+      <p id="library-empty" class="hint">Nothing saved yet. Recipes you save are kept in this browser only.</p>
+      <ul id="library" class="cards"></ul>
+      <div class="actions">
+        <button type="button" class="btn" id="btn-lib-export"><span data-icon="download"></span>Back up library</button>
+        <button type="button" class="btn" id="btn-lib-import"><span data-icon="upload"></span>Restore library</button>
+        <input type="file" id="lib-file" class="visually-hidden" tabindex="-1" aria-hidden="true" accept=".json">
+      </div>
+      <h3 class="subhead">Starter recipes</h3>
+      <ul id="starters" class="cards"></ul>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <p>Independent open-source project. Not affiliated with or endorsed by FUJIFILM Corporation or Adobe Inc. Film simulation names are trademarks of their respective owners. Results are approximations of in-camera processing.</p>
+    </div>
+  </footer>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="js/data.js"></script>
+  <script src="js/icons.js"></script>
+  <script src="js/engine.js"></script>
+  <script src="js/export.js"></script>
+  <script src="js/parser.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Fuji Recipe Converter — tests</title>
+  <style>
+    body { font: 15px/1.5 system-ui, sans-serif; margin: 32px; }
+    li.fail { font-weight: 700; }
+    li.fail::before { content: "FAIL — "; }
+    li.pass::before { content: "ok — "; }
+  </style>
+</head>
+<body>
+  <h1>Tests</h1>
+  <p id="summary" role="status">Running…</p>
+  <ul id="log"></ul>
+
+  <script src="../js/data.js"></script>
+  <script src="../js/engine.js"></script>
+  <script src="../js/export.js"></script>
+  <script src="../js/parser.js"></script>
+  <script>
+    (function () {
+      "use strict";
+      var log = document.getElementById("log"), passed = 0, failed = 0;
+      function test(name, fn) {
+        var li = document.createElement("li");
+        try { fn(); li.className = "pass"; li.textContent = name; passed++; }
+        catch (e) { li.className = "fail"; li.textContent = name + ": " + e.message; failed++; }
+        log.appendChild(li);
+      }
+      function eq(a, b, what) {
+        if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error((what || "value") + " expected " + JSON.stringify(b) + ", got " + JSON.stringify(a));
+      }
+      function near(a, b, tol, what) {
+        if (Math.abs(a - b) > tol) throw new Error((what || "value") + " expected ~" + b + ", got " + a);
+      }
+      function subset(actual, expected) {
+        Object.keys(expected).forEach(function (k) { eq(actual[k], expected[k], k); });
+      }
+
+      var JAPAN = {
+        filmSim: "classic-chrome", dynamicRange: "dr100", whiteBalance: "kelvin", wbShiftRed: 4, wbShiftBlue: -5,
+        grainEffect: "strong", grainSize: "small", colorChromeEffect: "off", colorChromeFxBlue: "strong",
+        color: 3, sharpness: -2, highlight: -2, shadow: 0, noiseReduction: -4, clarity: -2
+      };
+
+      test("parser: two-column screenshot OCR layout", function () {
+        var text = [
+          "Recipe Settings",
+          "Film Simulation Dynamic Range",
+          "Classic Chrome DR100",
+          "White Balance R WB Shift Red",
+          "COLOUR TEMPERATURE 4",
+          "B WB Shift Blue Grain Effect",
+          "-5 Strong",
+          "Grain Size Color Chrome Effect",
+          "Small Off",
+          "Color Chrome FX Blue Color",
+          "Strong 3",
+          "Sharpness Highlight",
+          "-2 -2.0",
+          "Shadow Noise Reduction",
+          "0.0 -4",
+          "Clarity",
+          "-2"
+        ].join("\n");
+        var res = FR.parseText(text, { ocr: true });
+        subset(res.values, JAPAN);
+        eq("name" in res.values, false, "name from OCR");
+      });
+
+      test("parser: real Tesseract output with icon debris and a broken label", function () {
+        var text = "3 Recipe Settings\n\nCra Film Simulation DR] Dynamic Range\nClassic Chrome DR100\n\n" +
+          "White Balance R WB Shift Red\nCOLOUR TEMPERATURE 4\n\nB WB Shift Blue >.\\\" Grain Effect\n\n-5 \\\"+ Strong\n\n" +
+          "wes Grain Size 8 Color Chrome Effect\n\nsee Small Off\n\n® Color Chrome FX Blue MH Color\nStrong 3\n" +
+          "Sharpness Highlight\n\nA ®\n-2 -2.0\n\n2) Shadow Wid Noise Reduction\n0.0 a -4\nClarit\n\no y\n-2\n";
+        subset(FR.parseText(text, { ocr: true }).values, JAPAN);
+      });
+
+      test("parser: single-column label / value lines with unicode minus", function () {
+        var res = FR.parseText("Film Simulation\nClassic Neg.\nHighlight\n−1.5\nShadow\n+2\nNoise Reduction\n–4\nGrain Effect\nWeak");
+        subset(res.values, { filmSim: "classic-neg", highlight: -1.5, shadow: 2, noiseReduction: -4, grainEffect: "weak" });
+      });
+
+      test("parser: colon-separated list with inline WB shift and grain size", function () {
+        var res = FR.parseText([
+          "Kodak-ish Summer by Jane Doe",
+          "Film Simulation: Classic Chrome",
+          "Dynamic Range: DR400",
+          "Grain Effect: Strong, Large",
+          "Color Chrome Effect: Strong",
+          "Color Chrome FX Blue: Weak",
+          "White Balance: 5500K, +2 Red & -4 Blue",
+          "Highlight: -1",
+          "Shadow: +1.5",
+          "Color: +2",
+          "Sharpening: -2",
+          "High ISO NR: -4",
+          "Clarity: -3",
+          "ISO: Auto, up to ISO 6400",
+          "Exposure Compensation: +1/3 to +2/3"
+        ].join("\n"));
+        subset(res.values, {
+          name: "Kodak-ish Summer", author: "Jane Doe", filmSim: "classic-chrome", dynamicRange: "dr400",
+          grainEffect: "strong", grainSize: "large", colorChromeEffect: "strong", colorChromeFxBlue: "weak",
+          whiteBalance: "kelvin", kelvin: 5500, wbShiftRed: 2, wbShiftBlue: -4, highlight: -1, shadow: 1.5,
+          color: 2, sharpness: -2, noiseReduction: -4, clarity: -3, iso: "Auto, up to ISO 6400", exposureComp: "+1/3 to +2/3"
+        });
+      });
+
+      test("parser: named white balance and film simulation aliases", function () {
+        subset(FR.parseText("Film Simulation: PRO Neg. Hi\nWhite Balance: Auto White Priority, -1 Red & +3 Blue").values,
+          { filmSim: "pro-neg-hi", whiteBalance: "auto-white", wbShiftRed: -1, wbShiftBlue: 3 });
+        subset(FR.parseText("Film Simulation: Acros+R\nWhite Balance: Fluorescent 2").values,
+          { filmSim: "acros-r", whiteBalance: "fluorescent-2" });
+        subset(FR.parseText("Eterna Bleach Bypass\nColor: -2").values, { filmSim: "bleach-bypass", color: -2 });
+      });
+
+      test("parser: nonsense yields null", function () {
+        eq(FR.parseText("hello world, nothing to see"), null);
+        eq(FR.parseAny(""), null);
+      });
+
+      test("text export round-trips through the parser", function () {
+        FR.STARTERS.concat([FR.normalize(Object.assign({ name: "Japan", author: "M", kelvin: 6100 }, JAPAN))]).forEach(function (r) {
+          var back = FR.normalize(FR.parseAny(FR.toText(r)).values);
+          back.notes = r.notes;
+          eq(back, r, r.name);
+        });
+      });
+
+      test("share code round-trips, including non-ASCII names", function () {
+        var r = FR.normalize(Object.assign({ name: "Zażółć gęślą jaźń 日本", notes: "ü" }, JAPAN));
+        var code = FR.toShareCode(r);
+        eq(/^FR1\.[A-Za-z0-9_-]+$/.test(code), true, "code format");
+        eq(FR.fromShareCode("see https://example.test/#r=" + code + " thanks"), r);
+        eq(FR.fromShareCode("FR1.!!!"), null);
+        eq(FR.parseAny(code).source, "share code");
+      });
+
+      test("recipe .json import", function () {
+        var r = FR.normalize(JAPAN);
+        eq(FR.normalize(FR.parseAny(JSON.stringify({ app: "x", recipe: r })).values), r);
+      });
+
+      test("X RAW Studio .FP1 import", function () {
+        var xml = '﻿<?xml version="1.0" encoding="utf-8"?><ConversionProfile application="" version="">' +
+          '<PropertyGroup device="X-T4" version="" label="Summer by Ana"><ExposureBias>P0P33</ExposureBias>' +
+          '<DynamicRange>200</DynamicRange><FilmSimulation>ClassicNEGA</FilmSimulation><GrainEffect>WEAK</GrainEffect>' +
+          '<GrainEffectSize>LARGE</GrainEffectSize><ChromeEffect>STRONG</ChromeEffect><ColorChromeBlue>OFF</ColorChromeBlue>' +
+          '<WhiteBalance>Temperature</WhiteBalance><WBShiftR>-2</WBShiftR><WBShiftB>3</WBShiftB><WBColorTemp>6300K</WBColorTemp>' +
+          '<HighlightTone>-1.5</HighlightTone><ShadowTone>2</ShadowTone><Color>-3</Color><Sharpness>1</Sharpness>' +
+          '<NoisReduction>-4</NoisReduction><Clarity>4</Clarity></PropertyGroup></ConversionProfile>';
+        var res = FR.parseAny(xml);
+        subset(res.values, {
+          name: "Summer", author: "Ana", camera: "X-T4", filmSim: "classic-neg", dynamicRange: "dr200",
+          grainEffect: "weak", grainSize: "large", colorChromeEffect: "strong", colorChromeFxBlue: "off",
+          whiteBalance: "kelvin", kelvin: 6300, wbShiftRed: -2, wbShiftBlue: 3, highlight: -1.5, shadow: 2,
+          color: -3, sharpness: 1, noiseReduction: -4, clarity: 4, exposureComp: "+0.33 EV"
+        });
+        subset(FR.parseAny(xml.replace("Temperature", "FLight1").replace("ClassicNEGA", "BR")).values,
+          { whiteBalance: "fluorescent-1", filmSim: "monochrome-r" });
+      });
+
+      test("normalize clamps and snaps values", function () {
+        var r = FR.normalize({ filmSim: "nope", highlight: 9, shadow: -0.74, color: "3", wbShiftRed: -40, kelvin: 5555 });
+        subset(r, { filmSim: "provia", highlight: 4, shadow: -0.5, color: 3, wbShiftRed: -9, kelvin: 5560 });
+      });
+
+      test("engine: neutral recipe is an identity transform", function () {
+        var look = FR.derive(FR.DEFAULT_RECIPE, { drInCurve: true }), f = FR.makeTransform(look), out = [0, 0, 0];
+        [[0, 0, 0], [1, 1, 1], [0.5, 0.5, 0.5], [0.8, 0.2, 0.1], [0.1, 0.6, 0.9]].forEach(function (c) {
+          f(c[0], c[1], c[2], out);
+          for (var i = 0; i < 3; i++) near(out[i], c[i], 1e-6, "channel " + i + " of " + c);
+        });
+      });
+
+      test("engine: every film simulation gives finite, in-range, tone-monotonic output", function () {
+        FR.SIMS.forEach(function (sim) {
+          [-2, 4].forEach(function (tone) {
+            var look = FR.derive({ filmSim: sim.id, highlight: tone, shadow: tone, dynamicRange: "dr400", color: 4,
+              colorChromeEffect: "strong", colorChromeFxBlue: "strong", wbShiftRed: 9, wbShiftBlue: -9 }, { drInCurve: true });
+            var lut = FR.buildLut(look, 9), prev = -1, f = FR.makeTransform(FR.derive({ filmSim: sim.id, highlight: tone, shadow: tone })), out = [0, 0, 0];
+            for (var i = 0; i < lut.length; i++) if (!(lut[i] >= 0 && lut[i] <= 1)) throw new Error(sim.id + " LUT value " + lut[i]);
+            for (var g = 0; g <= 64; g++) {
+              f(g / 64, g / 64, g / 64, out);
+              if (out[1] < prev - 1e-9) throw new Error(sim.id + " grey ramp not monotonic at " + g);
+              prev = out[1];
+            }
+          });
+        });
+      });
+
+      test("engine: monochrome simulations output grey; settings move the image the right way", function () {
+        var out = [0, 0, 0], base = [0, 0, 0];
+        FR.makeTransform(FR.derive({ filmSim: "acros-r" }))(0.8, 0.3, 0.2, out);
+        near(out[0], out[1], 1e-9); near(out[1], out[2], 1e-9);
+
+        FR.makeTransform(FR.derive({}))(0.6, 0.4, 0.3, base);
+        FR.makeTransform(FR.derive({ color: 4 }))(0.6, 0.4, 0.3, out);
+        if (!(out[0] - out[2] > base[0] - base[2])) throw new Error("Color +4 should increase saturation");
+        FR.makeTransform(FR.derive({ wbShiftRed: 5, wbShiftBlue: -5 }))(0.5, 0.5, 0.5, out);
+        if (!(out[0] > 0.5 && out[2] < 0.5)) throw new Error("R+ B- should warm a grey");
+        FR.makeTransform(FR.derive({ shadow: 3 }))(0.25, 0.25, 0.25, out);
+        if (!(out[0] < 0.25)) throw new Error("Shadow + should darken shadows");
+        FR.makeTransform(FR.derive({ highlight: 3 }))(0.75, 0.75, 0.75, out);
+        if (!(out[0] > 0.75)) throw new Error("Highlight + should brighten highlights");
+        FR.makeTransform(FR.derive({ colorChromeFxBlue: "strong" }))(0.2, 0.3, 0.9, out);
+        if (!(out[2] < 0.9)) throw new Error("Color Chrome FX Blue should deepen blue");
+      });
+
+      test("engine: applyLut matches the direct transform", function () {
+        var look = FR.derive(JAPAN, { drInCurve: true }), n = 33, lut = FR.buildLut(look, n), f = FR.makeTransform(look);
+        var src = new Uint8ClampedArray([200, 120, 40, 255, 10, 200, 240, 255, 128, 128, 128, 255, 255, 255, 255, 255]);
+        var dst = new Uint8ClampedArray(src.length), out = [0, 0, 0];
+        FR.applyLut(src, dst, 4, 1, lut, n, 0);
+        for (var p = 0; p < 4; p++) {
+          f(src[p * 4] / 255, src[p * 4 + 1] / 255, src[p * 4 + 2] / 255, out);
+          for (var c = 0; c < 3; c++) near(dst[p * 4 + c], out[c] * 255, 3, "pixel " + p + " channel " + c);
+        }
+      });
+
+      test("LUT export: valid .cube structure", function () {
+        var cube = FR.toCube(Object.assign({ name: 'My "LUT" ż' }, JAPAN), 17), lines = cube.split("\n");
+        var data = lines.filter(function (l) { return /^[\d.]+ [\d.]+ [\d.]+$/.test(l); });
+        eq(data.length, 17 * 17 * 17, "data rows");
+        eq(lines.indexOf("LUT_3D_SIZE 17") > 0, true, "size line");
+        eq(lines.filter(function (l) { return /^TITLE "[\x20-\x7E]*"$/.test(l) && l.split('"').length === 3; }).length, 1, "title line");
+        // Red varies fastest: the second row is one red step up from black.
+        var second = data[1].split(" ").map(Number);
+        if (!(second[0] > second[2])) throw new Error("red should vary fastest");
+      });
+
+      test("XMP export: well-formed XML with the expected settings per target", function () {
+        var NS = "http://ns.adobe.com/camera-raw-settings/1.0/";
+        function desc(recipe, target) {
+          var doc = new DOMParser().parseFromString(FR.toXmp(recipe, target), "application/xml");
+          if (doc.getElementsByTagName("parsererror").length) throw new Error("XML parse error for " + target);
+          return doc.getElementsByTagNameNS("http://www.w3.org/1999/02/22-rdf-syntax-ns#", "Description")[0];
+        }
+        var r = Object.assign({ name: 'A & B <"x">', kelvin: 6000 }, JAPAN);
+
+        var fuji = desc(r, "fuji");
+        eq(fuji.getAttributeNS(NS, "CameraProfile"), "Camera CLASSIC CHROME");
+        eq(fuji.getAttributeNS(NS, "WhiteBalance"), "Custom");
+        eq(+fuji.getAttributeNS(NS, "Temperature") > 6000, true, "warmer than 6000 K");
+        eq(fuji.getAttributeNS(NS, "Tint"), "+8");
+        eq(fuji.getAttributeNS(NS, "Saturation"), "+18");
+        eq(fuji.getAttributeNS(NS, "LuminanceAdjustmentBlue"), "-20");
+        eq(fuji.getAttributeNS(NS, "HueAdjustmentBlue"), null, "no simulated hue with a camera profile");
+        eq(fuji.getAttributeNS(NS, "GrainAmount"), "35");
+        eq(fuji.getAttributeNS(NS, "Clarity2012"), "-14");
+        eq(fuji.getAttributeNS(NS, "PresetType"), "Normal");
+        eq(/^[0-9A-F]{32}$/.test(fuji.getAttributeNS(NS, "UUID")), true, "UUID");
+        eq(fuji.getElementsByTagNameNS(NS, "Name")[0].textContent.trim(), 'A & B <"x">');
+        eq(fuji.getElementsByTagNameNS(NS, "ToneCurvePV2012")[0].getElementsByTagName("rdf:li").length, 5, "curve points");
+
+        var raw = desc(r, "raw");
+        eq(raw.getAttributeNS(NS, "CameraProfile"), null);
+        eq(raw.getAttributeNS(NS, "HueAdjustmentBlue"), "-12");
+        eq(raw.getAttributeNS(NS, "Saturation"), "+2");
+
+        var jpg = desc(r, "rendered");
+        eq(jpg.getAttributeNS(NS, "Temperature"), null);
+        eq(jpg.getAttributeNS(NS, "IncrementalTemperature"), "+20");
+        eq(jpg.getAttributeNS(NS, "IncrementalTint"), "-2");
+
+        var mono = desc({ filmSim: "acros-r", monoWC: 6 }, "raw");
+        eq(mono.getAttributeNS(NS, "ConvertToGrayscale"), "True");
+        eq(mono.getAttributeNS(NS, "GrayMixerRed"), "+30");
+        eq(mono.getAttributeNS(NS, "Saturation"), null);
+        eq(+mono.getAttributeNS(NS, "ColorGradeGlobalSat") > 0, true, "mono toning");
+
+        var auto = desc({ filmSim: "provia", wbShiftRed: 3, wbShiftBlue: -3 }, "fuji");
+        eq(auto.getAttributeNS(NS, "WhiteBalance"), null, "auto WB leaves white balance alone");
+        eq(+auto.getAttributeNS(NS, "ColorGradeGlobalSat") > 0, true, "shift as colour grade");
+        eq(auto.getElementsByTagNameNS(NS, "ToneCurvePV2012").length, 0, "no curve for neutral tones");
+      });
+
+      document.getElementById("summary").textContent = failed ? failed + " failed, " + passed + " passed" : "All " + passed + " tests passed";
+      document.title = (failed ? "FAIL " : "PASS ") + document.title;
+    })();
+  </script>
+</body>
+</html>
