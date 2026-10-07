@@ -1,3 +1,6 @@
 .DS_Store
 Thumbs.db
 *.log
+
+# Social media graphics and their templates (not part of the app)
+marketing/
