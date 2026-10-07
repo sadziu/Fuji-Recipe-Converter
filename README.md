@@ -111,7 +111,7 @@ A recipe is a handful of camera settings. It should not be locked to one camera 
 |---|---|
 | **Recipe editor** | Every setting from the camera's image quality menu, with the same names and ranges: film simulation, dynamic range, white balance and R/B shift, grain, Color Chrome Effect and FX Blue, color, sharpness, highlight, shadow, noise reduction, clarity, monochromatic color. |
 | **Import** | Screenshot (text is read on your computer with OCR), X RAW Studio profile (`.FP1` / `.FP2` / `.FP3`), pasted text, share code, recipe file. Drag and drop or paste with <kbd>Ctrl</kbd>+<kbd>V</kbd>. |
-| **Preview** | Built-in sample scene or your own photo, with a before/after slider. Rendered through the same LUT you download. |
+| **Preview** | Built-in sample scene or your own photo — JPEG, PNG, WebP and iPhone photos (`.heic` / `.heif`) — with a before/after slider. Rendered through the same LUT you download. |
 | **Lightroom preset** | `.xmp` in three variants: Fujifilm RAW, RAW from another camera, JPEG / TIFF / HEIC. |
 | **LUT** | `.cube` in 17, 33 or 65 point sizes. |
 | **Library** | Save favourites in the browser, back up and restore as a file. Four starter recipes included. |
@@ -213,6 +213,7 @@ js/parser.js      importers: text, OCR output, .FP1/.FP2/.FP3, share codes
 js/app.js         user interface
 js/icons.js       icon set
 vendor/tesseract  OCR engine (runs locally)
+vendor/heic       HEIC / HEIF decoder for iPhone photos (runs locally)
 tests/tests.html  open in a browser to run the tests
 start.bat / start.ps1 / start.sh   local start scripts
 ```
@@ -257,6 +258,9 @@ This has not been through a formal audit. If something does not work with your a
 - **Icons:** [Lucide](https://lucide.dev), ISC licence.
 - **OCR:** [Tesseract.js](https://github.com/naptha/tesseract.js) and
   [Tesseract](https://github.com/tesseract-ocr/tesseract), Apache License 2.0.
+- **HEIC / HEIF decoding:** [heic-to](https://github.com/hoppergee/heic-to), built on
+  [libheif](https://github.com/strukturag/libheif) and libde265, LGPL-3.0. Shipped unmodified as
+  a separate file (`vendor/heic/heic-to.js`) that you can replace with your own build.
 - **X RAW Studio profile format:** field names learned from publicly shared profile files.
   No Fujifilm software, profiles or data are included.
 
@@ -281,4 +285,4 @@ Full notices are in [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).
 
 ## License
 
-Code: [MIT](LICENSE). Bundled third-party components keep their own licences — see [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).
+Code: [MIT](LICENSE). Bundled third-party components keep their own licences (ISC, Apache-2.0, LGPL-3.0 and others) — see [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).

@@ -12,6 +12,7 @@ It bundles the following third-party work, unmodified, each under its own licenc
 | Tesseract.js core v5.1.1 (Tesseract OCR compiled to WebAssembly) | `vendor/tesseract/tesseract-core-lstm.wasm.js`, `vendor/tesseract/tesseract-core-simd-lstm.wasm.js` | Apache-2.0 |
 | — compiled into it: Leptonica image library | same files | BSD-2-Clause |
 | Tesseract English language data (`4.0.0_best_int`) | `vendor/tesseract/lang/eng.traineddata.gz` | Apache-2.0 (upstream tessdata); redistributed on npm as `@tesseract.js-data/eng` v1.0.0, declared MIT |
+| heic-to v1.6.5 (libheif 1.23.5 and libde265 compiled to WebAssembly) | `vendor/heic/heic-to.js` | LGPL-3.0 |
 
 ## Lucide icons
 
@@ -55,6 +56,17 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 - Source: https://github.com/tesseract-ocr/tessdata (Apache License 2.0), as packaged in
   https://github.com/naptha/tessdata
+
+## heic-to (HEIC / HEIF decoder)
+
+- Source: https://github.com/hoppergee/heic-to — built on https://github.com/strukturag/libheif
+  and https://github.com/strukturag/libde265
+- Licence: GNU Lesser General Public License v3.0 — full text in `vendor/heic/LICENSE`; the GNU
+  General Public License v3.0 it refers to is in `vendor/heic/GPL-3.0.txt`.
+- The file is distributed unmodified and is loaded as a separate script, only when an HEIC / HEIF
+  image is opened. The rest of this project is not derived from it and stays under the MIT
+  License. You may replace `vendor/heic/heic-to.js` with a build of your own from the sources
+  above; the app only relies on the global `HeicTo({ blob, type, quality })` function.
 
 ## Trademarks
 

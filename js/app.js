@@ -191,7 +191,7 @@
 
   function importFile(file) {
     if (!file) return;
-    if (/^image\//.test(file.type)) { importScreenshot(file); return; }
+    if (isImageFile(file)) { importScreenshot(file); return; }
     readFileText(file).then(function (text) {
       applyImport(FR.parseAny(text), "“" + file.name + "” does not look like a recipe file.");
     }, function () { importStatus("Could not read “" + file.name + "”.", true); });
@@ -212,12 +212,45 @@
     return tesseractLoading;
   }
 
-  function loadImage(blob) {
+  // iPhone photos (.heic / .heif) often arrive with an empty MIME type, so check the name too.
+  function isHeicFile(file) {
+    return /^image\/hei[cf]/i.test(file.type || "") || /\.hei[cf]$/i.test(file.name || "");
+  }
+  function isImageFile(file) {
+    return /^image\//.test(file.type || "") || isHeicFile(file);
+  }
+
+  var heicLoading;
+  function loadHeicDecoder() {
+    if (window.HeicTo) return Promise.resolve();
+    if (!heicLoading) {
+      heicLoading = new Promise(function (resolve, reject) {
+        var s = document.createElement("script");
+        s.src = "vendor/heic/heic-to.js";
+        s.onload = resolve;
+        s.onerror = function () { heicLoading = null; reject(new Error("HEIC decoder missing")); };
+        document.head.appendChild(s);
+      });
+    }
+    return heicLoading;
+  }
+
+  function decodeNatively(blob) {
     return new Promise(function (resolve, reject) {
       var url = URL.createObjectURL(blob), img = new Image();
       img.onload = function () { URL.revokeObjectURL(url); resolve(img); };
       img.onerror = function () { URL.revokeObjectURL(url); reject(new Error("Not an image")); };
       img.src = url;
+    });
+  }
+
+  // Browsers that can show HEIC themselves (Safari) do; the others get it converted locally first.
+  function loadImage(blob) {
+    return decodeNatively(blob).catch(function (err) {
+      if (!isHeicFile(blob)) throw err;
+      return loadHeicDecoder()
+        .then(function () { return window.HeicTo({ blob: blob, type: "image/jpeg", quality: 0.92 }); })
+        .then(decodeNatively);
     });
   }
 
@@ -273,7 +306,7 @@
       var t = e.target, data = e.clipboardData;
       if (!data) return;
       var editable = t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA");
-      var file = Array.prototype.filter.call(data.files || [], function (f) { return /^image\//.test(f.type); })[0];
+      var file = Array.prototype.filter.call(data.files || [], isImageFile)[0];
       if (file) { e.preventDefault(); importScreenshot(file); return; }
       if (editable) return;
       var text = data.getData("text/plain");
@@ -390,6 +423,7 @@
       var file = input.files[0];
       input.value = "";
       if (!file) return;
+      if (isHeicFile(file)) toast("Opening iPhone photo…");
       loadImage(file).then(function (img) {
         setSource(img, img.naturalWidth, img.naturalHeight, "photo you chose");
         toast("Preview updated with your photo.");
@@ -564,7 +598,7 @@
     window.addEventListener("hashchange", importFromHash);
   }
 
-  FR.app = { state: state, setRecipe: setRecipe, importScreenshot: importScreenshot };
+  FR.app = { state: state, setRecipe: setRecipe, importScreenshot: importScreenshot, loadImage: loadImage };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
   else init();
 })(window.FR = window.FR || {});
